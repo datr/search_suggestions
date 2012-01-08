@@ -1,0 +1,251 @@
+<?php 
+// $Id$ 
+
+/**
+* Implementation of hook_menu().
+*/
+function facebook_search_menu() {
+  $items = array();
+  $items['js/facebook_search/query'] = array(
+    'title' => 'Facebook Style Seach Callback',
+    'page callback' => 'facebook_search_error',
+    'type' => MENU_CALLBACK,
+  );
+  $items['admin/settings/facebook-search'] = array(
+    'title' => 'Facebook Style Search',
+    'description' => 'Configure Facebook Style Search',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('facebook_search_admin'),
+    'access arguments' => array('administer facebook style search'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+  return $items;
+}
+
+/**
+* Implementation of hook_js()
+* Defines the callback funciton/page for the JS handler module.
+*/
+function facebook_search_js() {
+  return array(
+    'query' => array(
+      'callback' => 'facebook_search_query',
+    ),
+  );
+}
+
+function facebook_search_perm() {
+  return array('administer facebook style search', 'use facebook style search');
+}
+
+function facebook_search_admin() {
+  $form = array();
+  
+	$form['facebook_search'] = array(
+		'#type' => 'fieldset',
+		'#title' => t('Settings'),
+	);
+	$form['facebook_search']['facebook_search_engine'] = array(
+		'#type' => 'radios',
+		'#title' => t('Search engine'),
+		'#default_value' => variable_get('facebook_search_engine', 'drupal_search'),
+		'#options' => array('local' => t('Local data source'), 
+												'drupal_search' => t('Remote data source - Drupal Search')),
+	);
+	$form['facebook_search']['facebook_search_node_types'] = array(
+		'#type' => 'checkboxes',
+		'#title' => t('Node types'),
+		'#description' => t('Set the content-types that you would like to appear via AutoSuggest'),
+		'#default_value' => variable_get('facebook_search_node_types', array()),
+		'#options' => node_get_types('names'),
+	);
+	$form['facebook_search']['facebook_search_cache_length'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Cache Length'),
+		'#size' => 60,
+		'#description' => t('The number of backend query results to store in cache. If set to 1 (the current result), no caching will happen. Must be >= 1.'),
+		'#default_value' => variable_get('facebook_search_cache_length', 10),
+	);
+	$form['facebook_search']['facebook_search_cache_time'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Server Side Cache Lifetime'),
+		'#size' => 60,
+		'#description' => t('The time in seconds that search results should be cached for.'),
+		'#default_value' => variable_get('facebook_search_cache_time', 86400),
+	);
+	$form['facebook_search']['facebook_search_delay'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Delay'),
+		'#size' => 60,
+		'#description' => t('The delay in milliseconds the autocompleter waits after a keystroke to activate itself.'),
+		'#default_value' => variable_get('facebook_search_delay', 100),
+	);
+	$form['facebook_search']['facebook_search_scroll'] = array(
+		'#type' => 'textfield',
+		'#title' => t('Scroll'),
+		'#size' => 5,
+		'#description' => t('Whether to scroll when more results than configured via scrollHeight are available.'),
+		'#default_value' => variable_get('facebook_search_scroll', 'true'),
+	);
+	$form['facebook_search']['facebook_search_scroll_height'] = array(
+  	'#type' => 'textfield',
+	  '#title' => t('Scroll Height'),
+	  '#size' => 5,
+	  '#description' => t('height of scrolled autocomplete control in pixels'),
+	  '#default_value' => variable_get('facebook_search_scroll_height', '180px'),
+	);
+	$form['#submit'][] = 'facebook_search_admin_submit';  
+	
+  return system_settings_form($form);
+}
+
+function facebook_search_admin_submit($form, &$form_state) {
+  cache_clear_all('*', 'cache_facebook_search', TRUE);
+}
+
+function facebook_search_form_alter(&$form, &$form_state, $form_id) {
+  if (!user_access('use facebook style search')) return;
+  switch ($form_id) {
+    case 'search_block_form':
+    case 'search_theme_form':
+      _facebook_search_engine_init();
+      $form['#attributes']['class'] .= 'facebook_search_form';
+      $form['search_theme_form']['#attributes']['class'] .= ' facebook_search';
+      $form['search_block_form']['#attributes']['class'] .= ' facebook_search';
+      $form['submit']['#attributes']['class'] .= ' facebook_search_submit';
+      break;
+  }
+}
+
+
+/**
+* Implementation of facebook_search_query()
+*/
+function facebook_search_query($arg = NULL, $reset = FALSE) {
+  drupal_set_header('Content-Type: text/javascript; charset=utf-8');
+  $arg = $_GET['s'];
+  // check to see if the search query exists in the cache
+  if ($cache = cache_get($arg, 'cache_facebook_search')) {
+    $json = $cache->data;
+  } else {
+    // If it doesn't load the libraries neccessary to do a drupal search.
+    require_once('includes/form.inc');
+    require_once('modules/search/search.module');
+    require_once('includes/unicode.inc');
+    require_once('includes/pager.inc');
+
+    // What type of nodes should be searched for
+    $join1 = '';
+    $join2 = 'INNER JOIN {node} n ON n.nid = i.sid';
+    $where = '1 = 1'; 
+    $types = array_filter(variable_get('facebook_search_node_types', array()));
+    if (count($types) > 0) {
+      require_once(drupal_get_path('module', 'facebook_search') . '/facebook_search.filter.inc');
+      $join1 = 'INNER JOIN {node} n ON i.sid = n.nid';
+      $join2 = '';
+      $where = 'n.type IN (' . db_placeholders($types, 'varchar') . ')';
+    }
+
+    // Perform a search using the drupal api
+    // Include other fields we want in the query to reduce database requests
+    $results = do_search($arg, 
+												 "node",
+												 $join1,
+												 $where,
+												 $types,
+												 'i.relevance AS score, n.title title, n.type ctype, COALESCE(ua.dst, CONCAT(\'node/\', n.nid)) AS url',
+												 $join2 . ' LEFT JOIN {url_alias} ua ON ua.src = CONCAT(\'node/\', n.nid)');
+    
+    $output = _facebook_search_process_results($results);
+    $json = json_encode($output);
+    cache_set($arg, $json, 'cache_facebook_search', time() + variable_get('facebook_search_cache_time', 86400));
+  }
+  
+  echo $json;
+}
+
+/**
+* Implementation of hook_flush_cache
+* Helps keep our cache up-to-date and reduces number of cycles
+* on each query request.
+*/
+function facebook_search_flush_caches() {
+  return array('cache_facebook_search');
+}
+
+/**
+* Implementation of facebook_search_error()
+* Fired when JS handler module is not installed, enabled, or working.
+*/
+function facebook_search_error($arg1 = NULL) {
+  return "Error: Unable to access Facebook Search (is the JS module properly installed?)";
+}
+
+function _facebook_search_process_results($results) {
+  $output = array();
+  $key = array();
+  
+  foreach ($results as $result) {
+    if (isset($key[$result->ctype])) {
+      $d = $key[$result->ctype];
+    } else {
+      $d = count($key);
+      $key[$result->ctype] = $d;
+      $output[$d] = array($result->ctype, array());
+    }
+    $output[$d][1][] = array($result->title, $result->url);
+  }
+  
+  return $output;
+}
+
+function _facebook_search_engine_init() {
+  static $include_once = TRUE;
+  if ($include_once) {
+    $include_once = FALSE;
+    $engine = variable_get('facebook_search_engine', 'drupal_search');
+    $config = array(
+      'ct' => node_get_types('names'),
+      'delay' => variable_get('facebook_search_delay', 100),
+      'scroll' => variable_get('facebook_search_scroll', 'true'),
+      'scroll_height' => variable_get('facebook_search_scroll_height', 180),
+      'min_chars' => variable_get('minimum_word_size', 3)
+    );
+    
+    drupal_add_css(drupal_get_path('module', 'facebook_search') . '/js/jquery.autocomplete.css');
+
+    switch($engine) {
+      case 'local':
+         $config['data'] = _facebook_search_generate_local_data();
+         drupal_add_js(drupal_get_path('module', 'facebook_search') . '/js/jquery.autocomplete.local.js');
+         drupal_add_js(drupal_get_path('module', 'facebook_search') . '/js/facebook_search.local.js');
+        break;
+      case 'drupal_search':
+        $config['cache_length'] = variable_get('facebook_search_cache_length', 10);
+        drupal_add_js(drupal_get_path('module', 'facebook_search') . '/js/jquery.autocomplete.js');
+        drupal_add_js(drupal_get_path('module', 'facebook_search') . '/js/facebook_search.js');
+        break;
+    }
+    
+    drupal_add_js(array('facebook_search' => $config), 'setting');
+  }
+}
+
+function _facebook_search_generate_local_data() {
+  $sql = 'SELECT n.title title, n.type type, COALESCE(ua.dst, CONCAT(\'node/\', n.nid)) url
+          FROM {node} n
+          LEFT JOIN {url_alias} ua ON ua.src = CONCAT(\'node/\', n.nid)';
+    
+  $types = array_filter(variable_get('facebook_search_node_types', array()));
+  if (count($types) > 0) {
+    $sql .= ' WHERE type IN (' . db_placeholders($types, 'varchar') . ')';
+  }
+  
+  $sql .= ' ORDER BY type ASC';
+
+  $output = array();
+  $result = db_query($sql, $types);
+  while ($row = db_fetch_array($result)) $output[] = $row;
+    
+  return $output;
+}
