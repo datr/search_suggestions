@@ -2,7 +2,6 @@ name = "Facebook Style Search"
 description = "Loads and displays search results as you type below the search box."
 core = 6.x
 dependencies[] = js
-dependencies[] = jtemplate
 dependencies[] = search
 dependencies[] = jquery_update
 dependencies[] = path
