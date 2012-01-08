@@ -234,7 +234,8 @@ function _facebook_search_engine_init() {
 function _facebook_search_generate_local_data() {
   $sql = 'SELECT n.title title, n.type type, COALESCE(ua.dst, CONCAT(\'node/\', n.nid)) url
           FROM {node} n
-          LEFT JOIN {url_alias} ua ON ua.src = CONCAT(\'node/\', n.nid)';
+          LEFT JOIN {url_alias} ua ON ua.src = CONCAT(\'node/\', n.nid)
+          WHERE n.status = 1';
     
   $types = array_filter(variable_get('facebook_search_node_types', array()));
   if (count($types) > 0) {
