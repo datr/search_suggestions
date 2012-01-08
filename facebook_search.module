@@ -216,7 +216,7 @@ function _facebook_search_engine_init() {
 
     switch($engine) {
       case 'local':
-         $config['data'] = _facebook_search_generate_local_data();
+         _facebook_search_add_local_data();
          drupal_add_js(drupal_get_path('module', 'facebook_search') . '/js/jquery.autocomplete.local.js');
          drupal_add_js(drupal_get_path('module', 'facebook_search') . '/js/facebook_search.local.js');
         break;
@@ -249,4 +249,43 @@ function _facebook_search_generate_local_data() {
   while ($row = db_fetch_array($result)) $output[] = $row;
     
   return $output;
+}
+
+function _facebook_search_add_local_data() {
+  $lifetime = variable_get('facebook_search_local_cache_lifetime', '86400');
+  $datafile = variable_get('facebook_search_local_cache_file', NULL);
+
+  if ($lifetime > 0 && !file_exists($datafile)) {
+    facebook_search_cron();
+    $datafile = variable_get('facebook_search_local_cache_file', NULL);
+  }
+
+  if ($lifetime > 0 && file_exists($datafile)) {
+      drupal_add_js($datafile);
+  } else {
+    drupal_add_js(array('facebook_search_data' => _facebook_search_generate_local_data()), 'setting');
+  }
+}
+
+function facebook_search_cron() {
+  $engine = variable_get('facebook_search_engine', 'drupal_search');
+  $lifetime = variable_get('facebook_search_local_cache_lifetime', '86400');
+  $datafile = variable_get('facebook_search_local_cache_file', NULL);
+  $lastexec = variable_get('facebook_search_local_cache_refreshed', 0);
+  $now = time();
+
+  if ($engine == 'local' && ($now - $lastexec) >= $lifetime) {
+    $output = 'jQuery.extend(Drupal.settings, {"facebook_search_data": ' . json_encode(_facebook_search_generate_local_data()) . '});';
+    $new_datafile = file_directory_path() . '/search_suggestions-' . $now . '.js';
+
+    if (!file_save_data($output, $new_datafile, FILE_EXISTS_ERROR)) {
+      watchdog('Search Suggestions', 'Unable to create local search suggestion data cache.', array(), WATCHDOG_ERROR);
+      return FALSE;
+    }
+    
+    variable_set('facebook_search_local_cache_file', $new_datafile);
+    file_delete($datafile);
+
+    variable_set('facebook_search_local_cache_refreshed', $now);
+  }
 }

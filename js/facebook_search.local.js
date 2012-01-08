@@ -5,7 +5,7 @@ Drupal.behaviors.facebook_search = function (context) {
 			return false;
 	  }
 	});
-	$('.facebook_search').attr('size', 27).autocomplete(Drupal.settings.facebook_search.data, {
+	$('.facebook_search').attr('size', 27).autocomplete(Drupal.settings.facebook_search_data, {
     selectFirst: false,
     matchContains: true,
   	matchCase: false,
