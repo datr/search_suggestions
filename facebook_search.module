@@ -70,7 +70,7 @@ function facebook_search_admin() {
 		'#type' => 'textfield',
 		'#title' => t('Server Side Cache Lifetime'),
 		'#size' => 60,
-		'#description' => t('The time in seconds that search results should be cached for.'),
+		'#description' => t('The time in seconds that search results should be cached for. Set to 0 to disable cacheing.'),
 		'#default_value' => variable_get('facebook_search_cache_time', 86400),
 	);
 	$form['facebook_search']['facebook_search_delay'] = array(
@@ -252,7 +252,7 @@ function _facebook_search_generate_local_data() {
 }
 
 function _facebook_search_add_local_data() {
-  $lifetime = variable_get('facebook_search_local_cache_lifetime', '86400');
+  $lifetime = variable_get('facebook_search_cache_time', '86400');
   $datafile = variable_get('facebook_search_local_cache_file', NULL);
 
   if ($lifetime > 0 && !file_exists($datafile)) {
@@ -269,7 +269,7 @@ function _facebook_search_add_local_data() {
 
 function facebook_search_cron() {
   $engine = variable_get('facebook_search_engine', 'drupal_search');
-  $lifetime = variable_get('facebook_search_local_cache_lifetime', '86400');
+  $lifetime = variable_get('facebook_search_cache_time', '86400');
   $datafile = variable_get('facebook_search_local_cache_file', NULL);
   $lastexec = variable_get('facebook_search_local_cache_refreshed', 0);
   $now = time();
