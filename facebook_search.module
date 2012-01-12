@@ -239,7 +239,7 @@ function _facebook_search_generate_local_data() {
     
   $types = array_filter(variable_get('facebook_search_node_types', array()));
   if (count($types) > 0) {
-    $sql .= ' WHERE type IN (' . db_placeholders($types, 'varchar') . ')';
+    $sql .= ' AND type IN (' . db_placeholders($types, 'varchar') . ')';
   }
   
   $sql .= ' ORDER BY type ASC';
