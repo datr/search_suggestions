@@ -100,6 +100,7 @@ function facebook_search_admin() {
 }
 
 function facebook_search_admin_submit($form, &$form_state) {
+  facebook_search_flush_caches();
   cache_clear_all('*', 'cache_facebook_search', TRUE);
 }
 
@@ -170,6 +171,13 @@ function facebook_search_query($arg = NULL, $reset = FALSE) {
 * on each query request.
 */
 function facebook_search_flush_caches() {
+  $engine = variable_get('facebook_search_engine', 'drupal_search');
+  $datafile = variable_get('facebook_search_local_cache_file', NULL);
+
+  if ($engine == 'local' && file_exists($datafile)) {
+    file_delete($datafile);
+  }
+
   return array('cache_facebook_search');
 }
 
